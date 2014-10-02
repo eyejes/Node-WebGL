@@ -1,0 +1,203 @@
+<!doctype html>
+<html>
+	<head>
+	<title>Client</title>
+	<script src="/socket.io/socket.io.js"></script>
+	<style>
+	#touchable {
+		display:block;
+		width:1000px;
+		height:1200px;
+		background-color: #555555;
+	}
+	</style>
+	</head>
+	<body>
+	<div id="touchable">
+	</div>
+	<script>
+	var player = io.connect("http://166.78.237.67:8500");
+
+	var multiTouches = [];
+	var playerId = 0;
+	var numPlayers = 0;
+
+	player.on('connect',function() {
+		var msg = {};
+		msg.admin = 0;
+		player.emit('who', msg); 
+	});
+
+	player.on('player_id', function (data){
+		playerId = data.playerId;
+	});
+
+	player.on('num_players', function (data){
+		numPlayers = data.numPlayers;
+	});
+
+	///////////////////////
+	//convenience functions
+	///////////////////////
+
+	function copyTouch(touch) {
+	  	return { 	identifier: touch.identifier, 
+	  				pageX: touch.pageX, 
+	  				pageY: touch.pageY 
+	  			};
+	}
+
+    function findTouch(idToFind) {
+
+  		for (var i=0; i < multiTouches.length; i++) {
+	    	if (multiTouches[i].identifier == idToFind) {
+	      	return i;
+
+	    	}
+  		}
+  		return -1;    // not found
+	}
+
+	///////////////////////
+	//multitouch handlers
+	///////////////////////
+
+	var handleStart = function(touch){
+
+		touch.preventDefault();
+		var touches = touch.changedTouches;
+		for (var i=0; i < touches.length; i++) {
+
+			//copy what we want from the touch
+			var newTouch = copyTouch( touches[i] );
+			
+			//save the new touch point
+			multiTouches.push( newTouch );
+
+			//make a new message to notify the admin to add a new touch
+			var newTouchData = {};
+			newTouchData.touch = newTouch;
+			newTouchData.playerId = playerId;
+
+			player.emit('touch_start', newTouchData );
+
+
+
+		}
+
+	}
+
+	var handleMove = function(touch){
+
+		touch.preventDefault();
+		var touches = touch.changedTouches;
+
+		for(var i=0;i<touches.length;i++){
+			//find the saved touch point
+			var index = findTouch( touches[i].identifier );
+			if(index != -1){
+
+				//make a new message to update the admin of the moved touch
+				var moveData = {};
+				moveData.playerId = playerId;
+				moveData.touch = copyTouch( touches[i] );
+;
+
+				player.emit('move', moveData);
+
+				//swap the old touch for the new one
+				multiTouches.splice(index, 1, copyTouch( touches[i] ) );
+
+			}else{
+				console.log("don't know which touch to update");
+			}
+		}
+
+	}
+
+	var handleEnd = function(touch){
+		touch.preventDefault();
+		var touches = touch.changedTouches;
+
+		for(var i=0;i<touches.length;i++){
+			//find the saved touch point
+			var index = findTouch( touches[i].identifier );
+
+			if(index != -1){
+
+				//make a new message to update the admin of the moved touch
+				var endData = {};
+				endData.playerId = playerId;
+				endData.touch = copyTouch( touches[i] );
+
+				console.log("touch end event");
+				console.log(endData);
+
+				player.emit('touch_end', endData);
+
+				//swap the old touch for the new one
+				multiTouches.splice(index, 1 );
+
+			}else{
+				console.log("don't know which touch to end");
+			}
+		}
+
+	}
+
+	///////////////////////
+	//touch event listeners 
+	///////////////////////
+
+	var el = document.getElementById("touchable");
+  	el.addEventListener("touchstart", handleStart, false);
+  	el.addEventListener("touchend", handleEnd, false);
+  	el.addEventListener("touchcancel", handleEnd, false);
+  	el.addEventListener("touchleave", handleEnd, false);
+  	el.addEventListener("touchmove", handleMove, false);
+
+
+  	////////////////////////////////////
+	//Motion event handler and listener
+	////////////////////////////////////
+
+	var handleMotion = function(motion){
+
+		var accel = motion.acceleration;
+		accel.playerId = playerId;
+		console.log(accel);
+
+		//send the acceleration to the master client
+		player.emit('update_motion', accel);
+
+	}
+
+	window.addEventListener('devicemotion',handleMotion, false);
+
+
+	////////////////////////////////////
+	//Orientation event handler and listener
+	////////////////////////////////////
+
+	var handleOrientation = function(orientation){
+
+		var axies = {};
+		axies.z = orientation.alpha;
+		axies.x = orientation.beta;
+		axies.y = orientation.gamma;
+		axies.playerId = playerId;
+		
+		console.log(axies);
+
+		//send the acceleration to the master client
+		player.emit('update_orientation', axies);
+
+	}
+
+	window.addEventListener('deviceorientation',handleOrientation, false);
+
+
+	</script>
+
+	</body>
+</html>
